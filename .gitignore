@@ -3,8 +3,6 @@ __pycache__/
 
 *.csv
 *.xlsx
-*.parquet
-
-backend/merged_data.csv
-backend/reviews_products_merged.csv
-backend/clean_meta_with_item.xlsx
+data/
+backend/*.csv
+backend/*.xlsxgit
