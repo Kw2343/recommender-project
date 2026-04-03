@@ -1,63 +1,79 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
-from psycopg2.extras import execute_batch
-import pandas as pd
 
-df = pd.read_csv(
-    r"C:\Users\user\recommender_project\backend\merged_data.csv"
+app = FastAPI()
+
+# Allow frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-print("✅ Data loaded:", len(df))
-
-print("📡 Connecting to DB...")
-
-conn = psycopg2.connect(
-    dbname="recommender_db",
-    user="postgres",
-    password="1234",
-    host="localhost",
-    port="5432"
-)
-
-cur = conn.cursor()
-
-cur.execute("""
-DROP TABLE IF EXISTS recommendations;
-
-CREATE TABLE recommendations (
-    id SERIAL PRIMARY KEY,
-    parent_asin TEXT,
-    title TEXT,
-    rating FLOAT,
-    review_text TEXT,
-    user_id TEXT
-);
-""")
-
-print("✅ Table ready")
-
-# Prepare data (IMPORTANT: reduce columns!)
-data = [
-    (
-        row.get("parent_asin"),
-        row.get("title"),
-        row.get("rating"),
-        row.get("text"),
-        row.get("user_id")
+def get_connection():
+    return psycopg2.connect(
+        dbname="recommender_db",
+        user="postgres",
+        password="1234",
+        host="localhost",
+        port="5432"
     )
-    for _, row in df.iterrows()
-]
 
-print(f"📦 Inserting {len(data)} rows...")
+@app.get("/")
+def root():
+    return {"message": "API is running 🚀"}
 
-execute_batch(cur, """
-    INSERT INTO recommendations
-    (parent_asin, title, rating, review_text, user_id)
-    VALUES (%s, %s, %s, %s, %s)
-""", data)
+@app.get("/users")
+def get_users():
 
-conn.commit()
+    conn = get_connection()
+    cur = conn.cursor()
 
-cur.close()
-conn.close()
+    cur.execute("""
+        SELECT DISTINCT user_id
+        FROM recommendations
+        ORDER BY user_id
+    """)
 
-print("🎉 DB INSERT COMPLETE")
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return [{"user_id": r[0]} for r in rows]
+
+
+@app.get("/data/{user_id}")
+def get_user_data(user_id: int):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT
+            group_name,
+            max_cosine,
+            predicted_rating,
+            display_label
+        FROM recommendations
+        WHERE user_id = %s
+        LIMIT 5000
+    """,(user_id,))
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "group_name": r[0],
+            "max_cosine": r[1],
+            "predicted_rating": r[2],
+            "display_label": r[3],
+        }
+        for r in rows
+    ]
